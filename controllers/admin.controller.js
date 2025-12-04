@@ -1,6 +1,7 @@
 const ProductModel = require('../models/ProductModel');
 const fs = require('fs');
 const path = require('path');
+const cloudinary = require('cloudinary').v2;
 
 // POST /api/admin/newProduct - Crear producto
 exports.createProduct = async (req, res) => {

@@ -1,5 +1,5 @@
+// utils/emailService.js (MODIFICADO - Ahora usa pdfBuffer)
 const nodemailer = require('nodemailer');
-const path = require('path');
 
 const transporter = nodemailer.createTransport({
   host: process.env.EMAIL_HOST,
@@ -36,9 +36,11 @@ async function enviarCorreoContacto(destino, nombre, mensaje) {
 }
 
 async function enviarCorreoSuscripcion(destino, nombre, codigoCupon) {
-  const subject = `${process.env.EMPRESA_NOMBRE} - Gracias por suscribirte`;
+  const subject = `${process.env.EMPRESA_NOMBRE} - ¡Bienvenido!`;
   const html = `<p>Hola ${nombre},</p>
-    <p>Gracias por suscribirte. Aquí tienes un cupón de bienvenida: <strong>${codigoCupon}</strong></p>
+    <p>¡Gracias por suscribirte a nuestro boletín! Aquí está tu cupón de descuento:</p>
+    <h2>CÓDIGO: <strong>${codigoCupon}</strong></h2>
+    <p>Úsalo en tu próxima compra para obtener un descuento especial.</p>
     <p>${process.env.EMPRESA_NOMBRE} - ${process.env.EMPRESA_LEMA}</p>`;
 
   await transporter.sendMail({
@@ -49,15 +51,21 @@ async function enviarCorreoSuscripcion(destino, nombre, codigoCupon) {
   });
 }
 
-async function enviarCorreoCompra(destino, nombreCliente, pdfPath) {
-  const subject = `${process.env.EMPRESA_NOMBRE} - Nota de compra`;
-  const html = `<p>Hola ${nombreCliente},</p>
-    <p>Adjuntamos la nota de compra.</p>
-    <p>Gracias por tu compra.</p>`;
+// MODIFICACIÓN: Aceptar pdfBuffer en lugar de pdfPath
+async function enviarCorreoCompra(destino, nombre, pdfBuffer, orderId) { 
+  const subject = `${process.env.EMPRESA_NOMBRE} - Confirmación de Compra #${orderId}`;
+  const html = `<p>Hola ${nombre},</p>
+    <p>¡Gracias por tu compra! Adjuntamos la nota de tu orden con ID <strong>#${orderId}</strong>.</p>
+    <p>Si tienes alguna pregunta, no dudes en contactarnos.</p>
+    <p>${process.env.EMPRESA_NOMBRE} - ${process.env.EMPRESA_LEMA}</p>`;
 
   const attachments = [];
-  if (pdfPath) {
-    attachments.push({ filename: path.basename(pdfPath), path: pdfPath });
+  if (pdfBuffer) {
+    attachments.push({
+      filename: `nota_compra_${orderId}.pdf`,
+      content: pdfBuffer, // <- Usar el Buffer directamente
+      contentType: 'application/pdf'
+    });
   }
 
   try {
@@ -87,7 +95,7 @@ async function enviarCorreoReset(destino, nombre, resetToken) {
     <p>Si no solicitaste este cambio, ignora este correo.</p>
     <p>${process.env.EMPRESA_NOMBRE} - ${process.env.EMPRESA_LEMA}</p>`;
 
-  await transporter.sendMail({
+  return transporter.sendMail({
     from: process.env.EMAIL_USER,
     to: destino,
     subject,
@@ -101,4 +109,3 @@ module.exports = {
   enviarCorreoCompra,
   enviarCorreoReset
 };
-

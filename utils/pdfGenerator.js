@@ -1,153 +1,143 @@
+// utils/pdfGenerator.js (MODIFICADO - Ahora devuelve un Buffer)
 const PDFDocument = require('pdfkit');
-const fs = require('fs');
-const path = require('path');
 
 function formatCurrency(value) {
   const num = Number(value || 0);
   return num.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+// MODIFICACIÓN: La función ahora devuelve un Promise<Buffer>
 async function generarNotaCompraPDF(orden) {
-  const pdfDir = path.join(__dirname, '..', 'pdf');
-  if (!fs.existsSync(pdfDir)) fs.mkdirSync(pdfDir, { recursive: true });
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ margin: 40, size: 'A4' });
+    const buffers = [];
 
-  const fileName = `nota_compra_${orden.id || Date.now()}.pdf`;
-  const pdfPath = path.join(pdfDir, fileName);
-
-  const doc = new PDFDocument({ margin: 40, size: 'A4' });
-  const stream = fs.createWriteStream(pdfPath);
-  doc.pipe(stream);
-
-  // Encabezado
-  doc.font('Helvetica-Bold').fontSize(20).text(process.env.EMPRESA_NOMBRE || 'Nova Hogar', 40, 40);
-  doc.font('Helvetica').fontSize(10).text(process.env.EMPRESA_LEMA || 'Diseño y Confort para tu Hogar', 40, 64);
-
-  // Bloque con la dirección/contacto de la empresa (en la parte superior derecha)
-  const companyX = 360;
-  const companyY = 40;
-  const companyWidth = 180;
-  doc.rect(companyX - 6, companyY - 6, companyWidth + 12, 64).strokeOpacity(0.05).stroke();
-  doc.font('Helvetica-Bold').fontSize(10).text(process.env.EMPRESA_NOMBRE || 'Nova Hogar', companyX, companyY, { width: companyWidth, align: 'left' });
-  doc.font('Helvetica').fontSize(9).text(process.env.EMPRESA_DIRECCION || 'Calle Ejemplo 123, Ciudad', companyX, companyY + 14, { width: companyWidth });
-  doc.text(`Tel: ${process.env.EMPRESA_TELEFONO || '0000000000'}`, companyX, companyY + 30, { width: companyWidth });
-  doc.text(`${process.env.EMPRESA_CORREO || (process.env.EMAIL_USER || '')}`, companyX, companyY + 44, { width: companyWidth });
-
-  doc.moveDown(1.2);
-  doc.moveTo(40, doc.y).lineTo(555, doc.y).strokeOpacity(0.2).stroke();
-  doc.moveDown(0.5);
-
-  // Meta datos de la orden
-  // Ajustar posición para metadatos
-  const metaStartY = doc.y;
-  doc.fontSize(11).font('Helvetica-Bold').text(`Orden #${orden.id || ''}`, 40, metaStartY);
-  doc.fontSize(10).font('Helvetica').text(`Fecha: ${new Date().toLocaleString()}`, 40, metaStartY + 0, { align: 'right' });
-  doc.moveDown(0.5);
-  doc.fontSize(10).text(`Cliente: ${orden.nombre_cliente || ''}`);
-  if (orden.direccion) doc.text(`Dirección: ${orden.direccion}`);
-  if (orden.telefono) doc.text(`Teléfono: ${orden.telefono}`);
-  doc.moveDown(0.6);
-
-  // Tabla de ítems
-  doc.font('Helvetica-Bold').fontSize(11);
-  const startX = 40;
-  const colCantidad = startX;
-  const colProducto = 90;
-  const colPrecio = 420;
-  const colSubtotal = 500;
-
-  // Cabecera tabla
-  const headerY = doc.y;
-  doc.text('Cant', colCantidad, headerY);
-  doc.text('Producto', colProducto, headerY);
-  doc.text('Precio', colPrecio, headerY, { width: 70, align: 'right' });
-  doc.text('Subtotal', colSubtotal, headerY, { width: 70, align: 'right' });
-  doc.moveDown(0.3);
-  doc.moveTo(40, doc.y).lineTo(555, doc.y).strokeOpacity(0.08).stroke();
-  doc.moveDown(0.3);
-
-  doc.font('Helvetica').fontSize(10);
-  if (Array.isArray(orden.detalles)) {
-    orden.detalles.forEach(item => {
-      const nombre = item.nombre || item.nombre_producto || '';
-      const cantidad = String(item.cantidad || item.cant || 0);
-      const precioStr = `$${formatCurrency(item.precio || item.precio_unitario)}`;
-      const subtotalStr = `$${formatCurrency(item.subtotal)}`;
-      // Guardar posición antes de escribir para controlar saltos
-      const rowY = doc.y;
-      doc.text(cantidad, colCantidad, rowY);
-      doc.text(nombre, colProducto, rowY, { width: colPrecio - colProducto - 10 });
-      doc.text(precioStr, colPrecio, rowY, { width: 70, align: 'right' });
-      // Mostrar subtotal sin quiebres
-      doc.text(`$${formatCurrency(item.subtotal)}`, colSubtotal, rowY, { width: 70, align: 'right' });
-      doc.moveDown(0.8);
+    // Capturar el contenido del PDF en un Buffer
+    doc.on('data', buffers.push.bind(buffers));
+    doc.on('end', () => {
+      resolve(Buffer.concat(buffers));
     });
-  }
+    doc.on('error', reject);
 
-  doc.moveDown(0.5);
-  doc.moveTo(40, doc.y).lineTo(555, doc.y).strokeOpacity(0.1).stroke();
-  doc.moveDown(0.5);
+    // --- Lógica de generación de PDF ---
 
-  // Totales
-  const a4PageWidth = 595; 
-  const pageMargin = 40;
-  const totalsBoxWidth = 230;
-  const totalsBoxX = a4PageWidth - pageMargin - totalsBoxWidth; 
-  const lineHeight = 14;
-  const cur = val => `$${formatCurrency(val)}`;
-  const rows = [
-    { label: 'Subtotal:', value: cur(orden.subtotal), bold: false },
-    { label: 'Descuento Cupón:', value: cur(orden.cupon_descuento || 0), bold: false },
-    { label: 'Impuestos:', value: cur(orden.impuestos), bold: false },
-    { label: 'Gastos de envío:', value: cur(orden.gastos_envio), bold: false },
-    { label: 'Total:', value: cur(orden.total), bold: true }
-  ];
+    // Encabezado
+    doc.font('Helvetica-Bold').fontSize(20).text(process.env.EMPRESA_NOMBRE || 'Nova Hogar', 40, 40);
+    doc.font('Helvetica').fontSize(10).text(process.env.EMPRESA_LEMA || 'Diseño y Confort para tu Hogar', 40, 64);
 
-  const boxPadding = 10;
-  const boxHeight = rows.length * lineHeight + boxPadding * 2;
-  const boxTop = doc.y;
+    // Bloque con la dirección/contacto de la empresa (en la parte superior derecha)
+    const companyX = 360;
+    const companyY = 40;
+    const companyWidth = 180;
+    doc.rect(companyX, companyY, companyWidth, 60).fillAndStroke('#f9f9f9', '#cccccc');
+    doc.fillColor('#333333').font('Helvetica-Bold').fontSize(10).text('FACTURA / NOTA DE COMPRA', companyX + 10, companyY + 8, { width: companyWidth - 20 });
+    doc.font('Helvetica').fontSize(9);
+    doc.text(`N° Orden: ${orden.id || 'N/A'}`, companyX + 10, companyY + 22);
+    doc.text(`Fecha: ${new Date(orden.fecha_creacion).toLocaleDateString()}`, companyX + 10, companyY + 34);
+    doc.text(`Método: ${orden.metodo_pago}`, companyX + 10, companyY + 46);
+    doc.fillColor('#000000');
 
-  
-  doc.save();
-  doc.roundedRect(totalsBoxX, boxTop - 6, totalsBoxWidth, boxHeight + 6, 4).fillOpacity(0.04).fill('#000000');
-  doc.restore();
 
-  let ry = boxTop + boxPadding;
-  rows.forEach(r => {
-    if (r.bold) {
-      doc.font('Helvetica-Bold').fontSize(12);
-    } else {
-      doc.font('Helvetica').fontSize(10);
-    }
+    // Bloque de datos del cliente
+    doc.font('Helvetica-Bold').fontSize(12).text('Detalles del Cliente:', 40, 120);
+    doc.font('Helvetica').fontSize(10);
+    doc.text(`Nombre: ${orden.nombre_cliente}`, 40, 138);
+    doc.text(`Dirección: ${orden.direccion}, ${orden.ciudad}, ${orden.codigo_postal}`, 40, 150);
+    doc.text(`País: ${orden.pais}`, 40, 162);
+    doc.text(`Teléfono: ${orden.telefono}`, 40, 174);
     
-    doc.text(r.label, totalsBoxX + 8, ry, { width: 120, align: 'left' });
-   
-    doc.text(r.value, totalsBoxX + 140, ry, { width: 82, align: 'right' });
-    ry += lineHeight;
-  });
+    // Linea separadora
+    doc.moveTo(40, 195).lineTo(550, 195).stroke('#cccccc');
+    doc.moveDown(1.5);
 
-  doc.moveDown(rows.length * 0.8 + 0.5);
+    // Tabla de Detalles de la Compra
+    doc.font('Helvetica-Bold').fontSize(11).text('DETALLES DE LA ORDEN', 40, doc.y);
+    doc.moveDown(0.5);
 
-  doc.moveDown(1);
-  
-  const pageLeft = 40;
-  const pageWidth = 515; 
-  doc.x = pageLeft;
-  doc.font('Helvetica-Bold').fontSize(11).fillColor('#333333').text('Gracias por tu compra', pageLeft, doc.y, { width: pageWidth, align: 'center' });
-  doc.moveDown(0.3);
-  if (process.env.EMPRESA_NOMBRE) {
-    doc.font('Helvetica').fontSize(10).fillColor('#666666').text(process.env.EMPRESA_NOMBRE, pageLeft, doc.y, { width: pageWidth, align: 'center' });
-    doc.moveDown(0.2);
-  }
-  doc.moveDown(0.3);
-  doc.font('Helvetica').fontSize(9).fillColor('#666666').text('Si tienes preguntas sobre tu pedido, contáctanos en: ' + (process.env.EMPRESA_CORREO || process.env.EMAIL_USER || ''), pageLeft, doc.y, { width: pageWidth, align: 'center' });
-  
-    // Finalizar y esperar a que el stream termine antes de retornar la ruta
-    doc.end();
+    const tableTop = doc.y;
+    const itemHeight = 20;
+    const col1 = 40; // Producto
+    const col2 = 300; // Precio Unitario
+    const col3 = 400; // Cantidad
+    const col4 = 480; // Total
 
-    return new Promise((resolve, reject) => {
-      stream.on('finish', () => resolve(pdfPath));
-      stream.on('error', reject);
+    // Encabezados de tabla
+    doc.font('Helvetica-Bold').fontSize(10).fillColor('#333333');
+    doc.text('Producto', col1, tableTop);
+    doc.text('Precio Unitario', col2, tableTop, { align: 'right' });
+    doc.text('Cantidad', col3, tableTop, { align: 'right' });
+    doc.text('Subtotal', col4, tableTop, { align: 'right' });
+
+    doc.moveDown(0.5);
+    doc.moveTo(col1, doc.y).lineTo(550, doc.y).stroke('#999999');
+    doc.moveDown(0.5);
+    
+    // Filas de productos
+    let currentY = doc.y;
+    orden.detalles.forEach(item => {
+      doc.font('Helvetica').fontSize(10).fillColor('#000000');
+      doc.text(item.nombre_producto, col1, currentY);
+      doc.text(`$${formatCurrency(item.precio_unitario)}`, col2, currentY, { align: 'right' });
+      doc.text(item.cantidad, col3, currentY, { align: 'right' });
+      doc.text(`$${formatCurrency(item.subtotal)}`, col4, currentY, { align: 'right' });
+      currentY += itemHeight;
     });
+
+    // Subtotal/Totales (Caja a la derecha)
+    doc.moveDown(orden.detalles.length * 0.8);
+    const totalsBoxX = 320;
+    const totalsBoxY = currentY + 10;
+    const totalsBoxWidth = 230;
+    const lineHeight = 15;
+    const boxPadding = 10;
+
+    const rows = [
+      { label: 'Subtotal:', value: `$${formatCurrency(orden.subtotal)}` },
+      { label: 'Gastos de Envío:', value: `$${formatCurrency(orden.gastos_envio)}` },
+      { label: 'Impuestos (IVA):', value: `$${formatCurrency(orden.impuestos)}` },
+      { label: 'Cupón Descuento:', value: `-$${formatCurrency(orden.cupon_descuento || 0)}` },
+      { label: 'TOTAL PAGADO:', value: `$${formatCurrency(orden.total)}`, bold: true }
+    ];
+
+    const boxHeight = (rows.length * lineHeight) + (2 * boxPadding) - 5; 
+
+    doc.save();
+    doc.rect(totalsBoxX, totalsBoxY, totalsBoxWidth, boxHeight).fillAndStroke('#eeeeee', '#666666');
+    doc.fillColor('#000000');
+    doc.restore();
+
+    let ry = totalsBoxY + boxPadding;
+    rows.forEach(r => {
+      if (r.bold) {
+        doc.font('Helvetica-Bold').fontSize(12);
+      } else {
+        doc.font('Helvetica').fontSize(10);
+      }
+      
+      doc.text(r.label, totalsBoxX + 8, ry, { width: 120, align: 'left' });
+     
+      doc.text(r.value, totalsBoxX + 140, ry, { width: 82, align: 'right' });
+      ry += lineHeight;
+    });
+
+    doc.moveDown(rows.length * 0.8 + 0.5);
+
+    doc.moveDown(1);
+    
+    const pageLeft = 40;
+    const pageWidth = 515; 
+    doc.x = pageLeft;
+    doc.font('Helvetica-Bold').fontSize(11).fillColor('#333333').text('Gracias por tu compra', pageLeft, doc.y, { width: pageWidth, align: 'center' });
+    doc.moveDown(0.3);
+    if (process.env.EMPRESA_NOMBRE) {
+      doc.font('Helvetica').fontSize(10).fillColor('#666666').text(process.env.EMPRESA_NOMBRE, pageLeft, doc.y, { width: pageWidth, align: 'center' });
+    }
+
+    // Terminar de generar el PDF
+    doc.end();
+  });
 }
 
-module.exports = { generarNotaCompraPDF };
+module.exports = {
+  generarNotaCompraPDF,
+};
